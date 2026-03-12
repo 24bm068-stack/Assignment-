@@ -1,79 +1,61 @@
-%% Diabetes Progression Prediction
 clc;
 clear;
 close all;
 
-%% Load Dataset
-% Download diabetes dataset from UCI and save as diabetes.csv
-% The dataset contains 10 baseline variables + 1 target (disease progression)
+%% Step 1: Generate Synthetic Diabetes Data
+n = 500;   % number of patients
+features = 8; % number of predictor variables
 
-data = readtable('diabetes.csv');
+% Generate random patient features
+X = randn(n,features);
 
-% Features and Target
-X = table2array(data(:,1:end-1));
-Y = table2array(data(:,end));
+% Create a progression variable (target)
+Y = 2*X(:,1) + 1.5*X(:,2) - X(:,3) + 0.5*X(:,4) + randn(n,1);
 
-%% Split into Training and Testing (80-20)
-cv = cvpartition(size(X,1),'HoldOut',0.2);
-idx = cv.test;
+%% Step 2: Normalize Data
+X = normalize(X);
 
-XTrain = X(~idx,:);
-YTrain = Y(~idx);
+%% Step 3: Split Data (80% Training, 20% Testing)
+cv = cvpartition(n,'HoldOut',0.2);
 
-XTest = X(idx,:);
-YTest = Y(idx);
+Xtrain = X(training(cv),:);
+Ytrain = Y(training(cv));
 
-%% Feature Standardization
-[XTrain, mu, sigma] = zscore(XTrain);
-XTest = (XTest - mu) ./ sigma;
+Xtest = X(test(cv),:);
+Ytest = Y(test(cv));
 
-%% -------------------------------
-%% 1. Multiple Linear Regression
-%% -------------------------------
-mdl_lr = fitlm(XTrain, YTrain);
-Ypred_lr = predict(mdl_lr, XTest);
+%% Step 4: Train Model (Ensemble Regression)
+model = fitrensemble(Xtrain,Ytrain,'Method','Bag');
 
-%% -------------------------------
-%% 2. Support Vector Machine
-%% -------------------------------
-mdl_svm = fitrsvm(XTrain, YTrain,'KernelFunction','rbf',...
-                  'Standardize',true);
-Ypred_svm = predict(mdl_svm, XTest);
+%% Step 5: Prediction
+Ypred = predict(model,Xtest);
 
-%% -------------------------------
-%% 3. Random Forest Regression
-%% -------------------------------
-numTrees = 100;
-mdl_rf = TreeBagger(numTrees, XTrain, YTrain,...
-                    'Method','regression');
-Ypred_rf = predict(mdl_rf, XTest);
-Ypred_rf = str2double(Ypred_rf);
+%% Step 6: Evaluation
+RMSE = sqrt(mean((Ytest - Ypred).^2));
+MAE = mean(abs(Ytest - Ypred));
+R2 = corr(Ytest,Ypred)^2;
 
-%% -------------------------------
-%% Model Evaluation Function
-%% -------------------------------
-rmse = @(y,yhat) sqrt(mean((y-yhat).^2));
-r2 = @(y,yhat) 1 - sum((y-yhat).^2)/sum((y-mean(y)).^2);
+fprintf('RMSE = %.3f\n',RMSE);
+fprintf('MAE = %.3f\n',MAE);
+fprintf('R2 Score = %.3f\n',R2);
 
-%% Results
-fprintf('\nModel Performance:\n');
+%% Step 7: Plot Actual vs Predicted
+figure
+plot(Ytest,'b','LineWidth',2)
+hold on
+plot(Ypred,'r','LineWidth',2)
+legend('Actual','Predicted')
+title('Diabetes Progression Prediction')
+xlabel('Patient Samples')
+ylabel('Progression Value')
+grid on
 
-fprintf('\nLinear Regression:\n');
-fprintf('RMSE = %.3f\n', rmse(YTest,Ypred_lr));
-fprintf('R2   = %.3f\n', r2(YTest,Ypred_lr));
+%% Step 8: Feature Importance
+imp = predictorImportance(model);
 
-fprintf('\nSVM Regression:\n');
-fprintf('RMSE = %.3f\n', rmse(YTest,Ypred_svm));
-fprintf('R2   = %.3f\n', r2(YTest,Ypred_svm));
-
-fprintf('\nRandom Forest:\n');
-fprintf('RMSE = %.3f\n', rmse(YTest,Ypred_rf));
-fprintf('R2   = %.3f\n', r2(YTest,Ypred_rf));
-
-%% Plot Predictions
-figure;
-scatter(YTest,Ypred_rf,'filled');
-xlabel('Actual Progression');
-ylabel('Predicted Progression');
-title('Random Forest Prediction');
-grid on;
+figure
+bar(imp)
+title('Feature Importance')
+xlabel('Predictor Variables')
+ylabel('Importance Score')
+grid on
